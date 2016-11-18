@@ -125,7 +125,7 @@ void* job_controller(void* inf){
 
               finished_job = info->finish_queue->pop(info->finish_queue);
               printf("freeing job: %d freed by thread: %d\n", finished_job->job_id, my_thread_ID);
-          //    free(finished_job);
+              free(finished_job);
             //  pthread_mutex_unlock (&peeklock);
               
 
