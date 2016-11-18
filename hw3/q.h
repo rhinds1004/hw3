@@ -103,7 +103,7 @@ void display (Queue* queue);
 /**
  * Create and initiate a Queue
  */
-Queue createQueue ();
+int createQueue (Queue*);
 
 
 /**
@@ -140,10 +140,11 @@ Job* pop (Queue* queue) {
     return item;
 }
 /**
- * Return but not remove the first item.
+ * Return but not remove the first item. // need to make it so if list is empty dont crash
  */
 Job* peek (Queue* queue) {
     Node* head = queue->head;
+    
     return head->item;
 }
 /**
@@ -170,15 +171,15 @@ void display (Queue* queue) {
 /**
  * Create and initiate a Queue
  */
-Queue createQueue () {
-    Queue queue;
-    queue.size = 0;
-    queue.head = NULL;
-    queue.tail = NULL;
-    queue.push = &push;
-    queue.pop = &pop;
-    queue.peek = &peek;
-    queue.display = &display;
-    return queue;
+int createQueue (Queue* queue) {
+    
+    queue->size = 0;
+    queue->head = NULL;
+    queue->tail = NULL;
+    queue->push = &push;
+    queue->pop = &pop;
+    queue->peek = &peek;
+    //queue.display = &display;
+    return 0;
 }
 

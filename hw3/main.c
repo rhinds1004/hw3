@@ -17,9 +17,10 @@
 #include "pthread.h"
 #include "time.h"
 
-#define JOB_SUB_THREAD_COUNT 2
+#define JOB_SUB_THREAD_COUNT 8
 #define RUN_LENGTH          20
 #define JOB_CREATE_ITERVAL   2
+pthread_mutex_t padlock, peeklock;
 int total_jobs = 0;
 /*
  * 
@@ -39,25 +40,49 @@ void* job_controller(void* inf);
 int main (int argc, char** argv)
 {
   pthread_t job_sub_threads[JOB_SUB_THREAD_COUNT];
+   pthread_mutex_init(&padlock, NULL);
+    pthread_mutex_init(&peeklock, NULL);
+    
   int i = 0;
-    Queue run_rdy_q = createQueue();
-  Queue io_q = createQueue();
-  Queue finished_q = createQueue();
+  //  Queue* run_rdy_q = createQueue();
+ // Queue* io_q = createQueue();
+  Queue* finished_q = NULL;
+  finished_q = (Queue*)malloc(sizeof(Queue)*1);
+  createQueue(finished_q);
+  Info_for_job info[JOB_SUB_THREAD_COUNT] = {0};
+  
+  Job tempJob = {0};
+  tempJob.job_id = 7;
+  
+  //info[0].finish_queue->push(&finished_q, &tempJob);
+
+finished_q->push(finished_q, &tempJob);
+Job* rejob = finished_q->peek(finished_q);
+  //Info_for_job* info = (Info_for_job*)calloc(sizeof(Info_for_job), 1);
+  for(i = 0; i < JOB_SUB_THREAD_COUNT; i++){
+            
+      info[i].finish_queue = finished_q;
+      info[i].thread_ID = i;
+      
+    }
   for( i = 0; i < JOB_SUB_THREAD_COUNT; i++){
-      Info_for_job* info = (Info_for_job*)calloc(sizeof(Info_for_job), 1);
-      info->finish_queue = &finished_q;
-      info->thread_ID = i;
-      job_controller(info);
-  pthread_create(&job_sub_threads[i], NULL, job_controller, info);
+
+  pthread_create(&job_sub_threads[i], NULL, job_controller, (void*) &info[i]);
     }
  //job_controller(info);
-  //pthread_join(job_sub_threads[0],NULL);
+  for( i = 0; i < JOB_SUB_THREAD_COUNT; i++){
+
+  pthread_join(job_sub_threads[i],NULL);
+    }
+pthread_mutex_destroy(&padlock);
+pthread_mutex_destroy(&peeklock);
   return (EXIT_SUCCESS);
 }
 
 //init jobs
 void* createJob(int* thread_ID){
-  printf("testing");
+ // printf("thread %d: testing : job number: %d\n", *thread_ID, total_jobs);
+ 
 }
 
 //
@@ -68,25 +93,36 @@ void* job_controller(void* inf){
   time_t start_time = init_time;
   time_t prev_time = time(NULL);
   Job* finished_job;
-
+  int check_ID = 0;
+ // info->finish_queue->peek(info->finish_queue)->thread_id;
   //while(time(NULL) - init_time < RUN_LENGTH){
   while(total_jobs < 20){
       if(time(NULL)- prev_time > JOB_CREATE_ITERVAL){
       createJob(&my_thread_ID);
       prev_time = time(NULL);
+      pthread_mutex_lock (&padlock);
       total_jobs++;
+      printf("thread %d: testing : job number: %d\n", my_thread_ID, total_jobs);
+      pthread_mutex_unlock (&padlock);
         }
       else{
-        /*  if(info->finish_queue->peek(info->finish_queue)->thread_id == my_thread_ID){
+          pthread_mutex_lock (&peeklock);
+          
+         // finished_job = info->finish_queue->peek(info->finish_queue)->thread_id;
+     //     printf("id of job on queue: %d", finished_job);
+            check_ID = info->finish_queue->peek(info->finish_queue)->thread_id;        
+         if( check_ID == my_thread_ID){  //<-- peek crashes if queue empty?
               //engage lock
 
               finished_job = info->finish_queue->pop(info->finish_queue);
-              free(finished_job);
-
+            //  free(finished_job);
+pthread_mutex_unlock (&peeklock);
               //free lock
               
             }
-      */  }
+
+          
+        }
     }
 
   return NULL;
