@@ -17,7 +17,7 @@
 #include "pthread.h"
 #include "time.h"
 
-#define JOB_SUB_THREAD_COUNT 2
+#define JOB_SUB_THREAD_COUNT 4
 #define RUN_LENGTH          20
 #define JOB_CREATE_ITERVAL   2
 pthread_mutex_t padlock, peeklock;
@@ -31,7 +31,7 @@ typedef struct {
   Queue* finish_queue;
 }Info_for_job;
 
-void* createJob(int* thread_ID);
+Job* createJob(int* thread_ID);
 void* job_controller(void* inf);
 
 
@@ -86,16 +86,18 @@ pthread_mutex_destroy(&peeklock);
 }
 
 //init jobs
-void* createJob(int* thread_ID){
+Job* createJob(int* thread_ID){
  // printf("thread %d: testing : job number: %d\n", *thread_ID, total_jobs);
         pthread_mutex_lock (&padlock);
       total_jobs++;
+      Job* created_Job = (Job*)calloc(sizeof(Job),1);
+      created_Job->thread_id = *thread_ID;
+      created_Job->job_id = total_jobs;
       printf("thread %d: testing : job number: %d\n", *thread_ID, total_jobs);
       pthread_mutex_unlock (&padlock);
- 
+      return created_Job;
 }
 
-//
 void* job_controller(void* inf){
   Info_for_job* info = (Info_for_job*)inf;
   int my_thread_ID = info->thread_ID;
@@ -108,17 +110,17 @@ void* job_controller(void* inf){
   //while(time(NULL) - init_time < RUN_LENGTH){
   while(total_jobs < 20){
       if(time(NULL)- prev_time > JOB_CREATE_ITERVAL){
-      createJob(&my_thread_ID);
+      info->finish_queue->push(info->finish_queue, createJob(&my_thread_ID));
       prev_time = time(NULL);
-
         }
       else{
-        //  pthread_mutex_lock (&peeklock);
+          
           if(info->finish_queue->size != 0){
           
-          
-         // finished_job = info->finish_queue->peek(info->finish_queue)->thread_id;
-     //     printf("id of job on queue: %d", finished_job);
+                    pthread_mutex_lock (&peeklock);
+        //  finished_job = info->finish_queue->peek(info->finish_queue)->thread_id;
+     // printf("id of job on queue: %d\n", finished_job->job_id);
+  
             check_ID = info->finish_queue->peek(info->finish_queue)->thread_id;        
          if( check_ID == my_thread_ID){  //<-- peek crashes if queue empty?
               //engage lock
@@ -126,7 +128,7 @@ void* job_controller(void* inf){
               finished_job = info->finish_queue->pop(info->finish_queue);
               printf("freeing job: %d freed by thread: %d\n", finished_job->job_id, my_thread_ID);
               free(finished_job);
-            //  pthread_mutex_unlock (&peeklock);
+             pthread_mutex_unlock (&peeklock);
               
 
               //free lock
