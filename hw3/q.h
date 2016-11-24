@@ -15,6 +15,7 @@
 #define Q_H
 #include <stdio.h>
 #include <stdlib.h>
+#include "pthread.h"
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -39,9 +40,10 @@ extern "C" {
   * Can display all content
   */
 #define NR_PHASES           5
-#define TRUE                0
-#define FALSE               1
-         
+#define NR_PHASE_TYPE       1
+#define TRUE                1
+#define FALSE               0
+    pthread_mutex_t push_lock, peek_lock, pop_lock;     
 
 
 typedef struct  {
@@ -50,7 +52,7 @@ int job_id;
 int nr_phases;  
 int current_phase;
 // Phase types: 1 = CPU phase; 2 = IO phase
-int phasetype_and_duration[NR_PHASES][NR_PHASES];
+int phasetype_and_duration[NR_PHASES][NR_PHASE_TYPE];
 int is_completed;
 }Job;
 
@@ -71,14 +73,6 @@ typedef struct Node {
 typedef struct Queue {
     Node* head;
     Node* tail;
-
-    void (*push) (struct Queue*, Job*); // add item to tail
-    // get item from head and remove it from queue
-    Job* (*pop) (struct Queue*);
-    // get item from head but keep it in queue
-    Job* (*peek) (struct Queue*);
-    // display all element in queue
-    void (*display) (struct Queue*);
     // size of this queue
     int size;
 } Queue;
@@ -96,23 +90,29 @@ Job* pop (Queue* queue);
  * Return but not remove the first item.
  */
 Job* peek (Queue* queue);
-/**
- * Show all items in queue.
- */
-void display (Queue* queue);
+
 /**
  * Create and initiate a Queue
  */
 int createQueue (Queue*);
-
+void init_locks();
 
 /**
  * Push an item into queue, if this is the first item,
  * both queue->head and queue->tail will point to it,
  * otherwise the oldtail->next and tail will point to it.
  */
+void init_locks(){
+        pthread_mutex_init (&push_lock, NULL);
+  pthread_mutex_init (&peek_lock, NULL);
+  pthread_mutex_init (&pop_lock, NULL);
+    
+}
+
+
 void push (Queue* queue, Job* item) {
-    // Create a new node
+// Create a new node
+   // pthread_mutex_lock(&push_lock);
     Node* n = (Node*) malloc (sizeof(Node));
     n->item = item;
     n->next = NULL;
@@ -124,50 +124,43 @@ void push (Queue* queue, Job* item) {
     }
     queue->tail = n;
     queue->size++;
+   // pthread_mutex_unlock(&push_lock);
 }
 /**
  * Return and remove the first item. returns a Job struct pointer
  */
 Job* pop (Queue* queue) {
+  //  pthread_mutex_lock(&pop_lock);
+    Node* head;
     // get the first item
-    Node* head = queue->head;
-    Job* item = head->item;
+    if(queue->size != 0){  head = queue->head; }
+    if( head != NULL) { Job* item = head->item; 
     // move head pointer to next node, decrease size
     queue->head = head->next;
     queue->size--;
     // free the memory of original head
-    free(head);
+  //  free(head);
     return item;
+    }
+    return NULL;
+ //   pthread_mutex_unlock(&pop_lock);
 }
 /**
  * Return but not remove the first item. // need to make it so if list is empty dont crash
  */
 Job* peek (Queue* queue) {
-    Node* head = queue->head;
-    
-    return head->item;
-}
-/**
- * Show all items in queue.
- */
-void display (Queue* queue) {
-    printf("\nDisplay: ");
-    // no item
-    if (queue->size == 0)
-        printf("No item in queue.\n");
-    else { // has item(s)
-        Node* head = queue->head;
-        int i, size = queue->size;
-        printf("%d item(s):\n", queue->size);
-        for (i = 0; i < size; i++) {
-            if (i > 0)
-                printf(", ");
-            printf("%d", head->item->job_id);
-            head = head->next;
-        }
+   // pthread_mutex_lock(&peek_lock);
+    Node* head ; 
+    if(queue->head != NULL){
+     head = queue->head;
+    if( head->item != NULL) return head->item;
     }
-    printf("\n\n");
+    else{
+        return -2;
+    }
+   // pthread_mutex_unlock(&peek_lock);
 }
+
 /**
  * Create and initiate a Queue
  */
@@ -176,10 +169,6 @@ int createQueue (Queue* queue) {
     queue->size = 0;
     queue->head = NULL;
     queue->tail = NULL;
-    queue->push = &push;
-    queue->pop = &pop;
-    queue->peek = &peek;
-    //queue.display = &display;
     return 0;
 }
 
