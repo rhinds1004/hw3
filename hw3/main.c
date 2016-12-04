@@ -32,6 +32,7 @@ pthread_mutex_t padlock, peeklock, cpu_thread_lock, finished_lock;
 pthread_mutex_t rnr_pop_lock, rnr_push_lock;
 pthread_mutex_t fnsh_pop_lock, fnsh_push_lock;
 pthread_mutex_t io_pop_lock, io_push_lock;
+pthread_mutex_t io_q_lock, rnr_q_lock, finish_q_lock;
 int total_jobs = 0;
 int total_finished_jobs = 0;
 Queue run_rdy_q = {0};
@@ -52,6 +53,7 @@ typedef struct
   pthread_t job_sub_threads[JOB_SUB_THREAD_COUNT];
   pthread_t cpu_threads[CPU_THREAD_COUNT];
   pthread_t io_threads[IO_THREAD_COUNT];
+  pthread_cond_t rnr_go, finished_go, io_go;
 Job* createJob (long thread_ID);
 void* job_controller (void* inf);
 void* cpu_thread (void* inf);
@@ -75,9 +77,15 @@ pthread_mutex_init(&fnsh_pop_lock, NULL);
 pthread_mutex_init(&fnsh_push_lock, NULL);
 pthread_mutex_init(&io_pop_lock, NULL);
 pthread_mutex_init(&io_push_lock, NULL);
-
-  init_locks();
+    pthread_mutex_init(&io_q_lock,NULL);
+    pthread_mutex_init(&rnr_q_lock,NULL);
+    pthread_mutex_init(&finish_q_lock,NULL);
+    pthread_cond_init(&rnr_go,NULL);
+    pthread_cond_init(&finished_go,NULL);
+    pthread_cond_init(&io_go,NULL);
   
+  init_locks();
+
 srand(time(NULL));
   int i = 0;
 
@@ -103,6 +111,7 @@ srand(time(NULL));
       pthread_create (&job_sub_threads[i], NULL, job_controller, (void*) &sub_ID[i]);
     }
 
+/*
     for (i = 0; i < CPU_THREAD_COUNT; i++)
     {
         cpu_ID[i] = i;
@@ -111,25 +120,26 @@ srand(time(NULL));
     {
          io_ID[i] = i;
     }
+*/
 /*
     for (i = 0; i < IO_THREAD_COUNT; i++)
     {
       pthread_create (&io_threads[i], NULL, io_thread, (void*) &io_ID[i]);
     }
+*/
     for (i = 0; i < CPU_THREAD_COUNT; i++)
     {
 
       pthread_create (&cpu_threads[i], NULL, cpu_thread, (void*) &cpu_ID[i]);
     }  
-*/
   
 
-/*
   for (i = 0; i < CPU_THREAD_COUNT; i++)
     {
 
       pthread_join (cpu_threads[i], NULL);
     }
+/*
     for (i = 0; i < IO_THREAD_COUNT; i++)
     {
 
@@ -166,20 +176,21 @@ Job* createJob (long thread_ID)
 {
   int i = 0, j = 0, phase_sel = 0;;
   Job* new_job = (Job*) calloc (sizeof (Job), 1);
-  pthread_mutex_lock (&padlock);
+ // pthread_mutex_lock (&padlock);
   total_jobs++;
   new_job->job_id = total_jobs;
   new_job->thread_id = thread_ID;
   new_job->nr_phases = NR_PHASES;
 
-  pthread_mutex_unlock (&padlock);
+//  pthread_mutex_unlock (&padlock);
   for(i = 0; i < NR_PHASES; i++){
       for (j = 0; j < NR_PHASE_TYPE; j++){
           if(j == 0 && i == 0){
               new_job->phasetype_and_duration[i][j] = PHASE_TYPE_CPU;
             }
           else{
-              phase_sel = (rand()%TOTAL_PHASE_TYPES)+1;
+             // phase_sel = (rand()%TOTAL_PHASE_TYPES)+1;
+              phase_sel = 1;
               new_job->phasetype_and_duration[i][j] = phase_sel;
             }
         }
@@ -188,62 +199,64 @@ Job* createJob (long thread_ID)
 }
 void* cpu_thread (void* inf)
 {
-/*
+    int i = 0;
     Info_for_job* info = (Info_for_job*) inf;
   int my_thread_ID = info->thread_ID; 
    int check_ID = 0;
-   time_t prev_time = time (NULL);
 
+   while(total_finished_jobs != TOTAL_JOBS){
      Job* job_to_run = (Job*)calloc(sizeof(Job), 1);
-
-
-  if (run_rdy_q.size != 0 || run_rdy_q.head != NULL) 
-
-            {
-                pthread_mutex_lock (&rnr_pop_lock);
+     pthread_mutex_lock(&rnr_pop_lock);
+     while(run_rdy_q.size == 0){
+         pthread_cond_wait(&rnr_go, &rnr_pop_lock );
+     }
+     
+              //  pthread_mutex_lock (&rnr_pop_lock);
                 job_to_run = pop (&run_rdy_q);
-                  pthread_mutex_unlock (&rnr_pop_lock);  
-                if(job_to_run != NULL){
-
+                  pthread_mutex_unlock(&rnr_pop_lock); 
+                
+                  
 
                   if(job_to_run->phasetype_and_duration[job_to_run->current_phase][NR_PHASE_TYPE] == PHASE_TYPE_CPU){
                       printf("executing Job: %d On cpu_thread: %d\n", job_to_run->job_id, job_to_run->thread_id); // crash here
-                      prev_time = time (NULL);
-                     while( time (NULL) - prev_time < PHASE_TYPE_CPU){
-                         prev_time = time(NULL);
-                       }
+                   //   prev_time = time (NULL);
+
 
                   (job_to_run->current_phase)++;
                   if(job_to_run->current_phase == job_to_run->nr_phases) job_to_run->is_completed = TRUE;
                     }
                   if(job_to_run->is_completed == TRUE){
                       pthread_mutex_lock (&fnsh_push_lock);
-                      info->finish_queue->push(info->finish_queue, job_to_run );
+                      push(&finished_q, job_to_run );
                        pthread_mutex_unlock (&fnsh_push_lock);
                       printf("transffering Job: %d On cpu_thread: %d to finished Queue\n", job_to_run->job_id, job_to_run->thread_id);
                       pthread_exit((void*)job_to_run->is_completed);
                     }
                   if(job_to_run->phasetype_and_duration[job_to_run->current_phase][NR_PHASE_TYPE] == PHASE_TYPE_CPU){
                    //   printf("transffering Job: %d On cpu_thread: %d to Ready to Run Queue\n", job_to_run->job_id, job_to_run->thread_id);
-                       pthread_mutex_lock (&rnr_push_lock);
-                      info->rdy_to_run_q->push(info->rdy_to_run_q, job_to_run);
-                       pthread_mutex_unlock (&rnr_push_lock);
+                      for(i = 0; i < 1000000; i++){
+                          ;
+                      }
+           //           pthread_mutex_lock (&rnr_push_lock);
+                     push(&run_rdy_q, job_to_run);
+                    pthread_cond_broadcast(&rnr_go);
+           //           pthread_mutex_unlock (&rnr_push_lock);
                       printf("transffering Job: %d On cpu_thread: %d to Ready to Run Queue\n", job_to_run->job_id, job_to_run->thread_id);
                       printf("phase %d Number of Phases left: %d\n", job_to_run->current_phase,(job_to_run->nr_phases-job_to_run->current_phase));
                     }
                   else if(job_to_run->phasetype_and_duration[job_to_run->current_phase][NR_PHASE_TYPE] == PHASE_TYPE_IO){
                     //  ;
                        pthread_mutex_lock (&io_push_lock);
-                      info->io_q->push(info->io_q, job_to_run);
+                      push(&io_q, job_to_run);
+                      pthread_cond_signal(&io_go);
                        pthread_mutex_unlock (&io_push_lock);
                       printf("transffering Job: %d On cpu_thread: %d to IO Queue\n", job_to_run->job_id, job_to_run->thread_id);
                       printf("phase %d Number of Phases left: %d\n", job_to_run->current_phase,(job_to_run->nr_phases-job_to_run->current_phase));
                     }
-                  }
-            } 
+                  
+             }
        
-     free(job_to_run);
-*/
+     //free(job_to_run);
      pthread_exit(NULL);
 }
 
@@ -329,14 +342,18 @@ void* job_controller (void* thread_ID_Array)
             new_job = createJob (my_thread_ID);
         //    pthread_mutex_lock (&rnr_push_lock);
         //  push (&run_rdy_q, new_job);
-          push (&finished_q, new_job);
+          push (&run_rdy_q, new_job);
           printf("pushed Job : %d onto Ready to Run queue\n", new_job->job_id);
           prev_time = time (NULL);
+          pthread_cond_broadcast(&rnr_go);
         }
- //     else
- //       {
-            if (time (NULL) - end_time > 1){
         //    pthread_mutex_lock (&peeklock);
+      if(total_jobs >= 20){
+          pthread_mutex_lock (&fnsh_pop_lock);
+          while(finished_q.size == 0){
+              pthread_cond_wait(&finished_go, &fnsh_pop_lock);
+          } 
+      }
           if (finished_q.size != 0)
           { 
               check_ID = peek(&finished_q)->thread_id;//segment signal here
@@ -362,7 +379,7 @@ void* job_controller (void* thread_ID_Array)
                 }//if 
             }
           end_time = time(NULL);
-              }//   }//else
+ 
   
     }//while loop
 

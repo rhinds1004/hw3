@@ -39,7 +39,7 @@ extern "C" {
   * Can get the size
   * Can display all content
   */
-#define NR_PHASES           5
+#define NR_PHASES           3
 #define NR_PHASE_TYPE       1
 #define TRUE                1
 #define FALSE               0
